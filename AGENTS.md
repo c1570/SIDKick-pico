@@ -25,10 +25,12 @@ There is no dedicated lint or typecheck command. The target is `SKpico`.
 
 | Option | Values | Purpose |
 |---|---|---|
-| `PICO_PLATFORM` | `rp2040` (default), `rp2350-arm-s` | MCU family. |
+| `PICO_PLATFORM` | `rp2040` (default), `rp2350-arm-s`, `rp2350-riscv` | MCU family. |
 | `PICO_BOARD` | `pico`, `pico2` | Board headers used by the SDK. |
 | `SKPICO_VARIANT` | (empty), `SKPICO_2350CR`, `SKPICO_2350` | Board define baked into the firmware. Required for RP2350: `SKPICO_2350CR` for the SKpico2350CR board, `SKPICO_2350` for the SKpico2350DAC/2350PWM boards (these also init the DCDC PSM pin). |
 | `PICO_EXTRAS_FETCH_FROM_GIT` | `ON` | Required — pico-extras is not vendored (provides `pico_audio_i2s`). |
+| `PICO_COMPILER` | `pico_riscv_gcc` | RISC-V only — name of the SDK toolchain file (`cmake/preload/toolchains/pico_riscv_gcc.cmake`). Not needed for ARM (auto-detected). |
+| `PICO_TOOLCHAIN_PATH` | path | RISC-V only — directory holding the `bin/` of the `riscv32-corev-elf` GCC toolchain. |
 
 ### RP2040 (interface board / tiny RP2040)
 
@@ -54,6 +56,21 @@ cd Source
 cmake -B build-2350 -DPICO_PLATFORM=rp2350-arm-s -DPICO_BOARD=pico2 \
   -DPICO_EXTRAS_FETCH_FROM_GIT=ON -DSKPICO_VARIANT=SKPICO_2350
 cmake --build build-2350 -j$(nproc)
+```
+
+### RP2350 RISC-V (Hazard3)
+
+Requires a `riscv32-corev-elf` GCC toolchain. The SDK's `pico_riscv_gcc` toolchain
+builds with `-march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb -mabi=ilp32`.
+
+```sh
+export PATH=/path/to/corev-openhw-gcc/bin:$PATH
+cd Source
+cmake -B build-2350-riscv -DPICO_PLATFORM=rp2350-riscv -DPICO_BOARD=pico2 \
+  -DPICO_EXTRAS_FETCH_FROM_GIT=ON -DPICO_SDK_FETCH_FROM_GIT=ON \
+  -DSKPICO_VARIANT=SKPICO_2350CR \
+  -DPICO_COMPILER=pico_riscv_gcc -DPICO_TOOLCHAIN_PATH=/path/to/corev-openhw-gcc
+cmake --build build-2350-riscv -j$(nproc)
 ```
 
 Artifacts land in the build directory as `SKpico.elf`, `SKpico.bin`, and `SKpico.uf2`.

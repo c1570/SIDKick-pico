@@ -204,10 +204,17 @@ extern uint32_t C64_CLOCK;
 #define SET_CLOCK_125MHZ set_sys_clock_pll( 1500000000, 6, 2 );
 #define SET_CLOCK_FAST   set_sys_clock_pll( 1500000000, 5, 1 );
 
+#if defined( __riscv )
+#define DELAY_Nx3p2_CYCLES( c )								\
+    asm volatile( "mv   a0, %[_c]\n\t"							\
+				  "1: addi a0, a0, -1\n\t"					\
+				  "bnez a0, 1b"  : : [_c] "r" (c) : "a0", "memory" );
+#else
 #define DELAY_Nx3p2_CYCLES( c )								\
     asm volatile( "mov  r0, %[_c]\n\t"							\
 				  "1: sub  r0, r0, #1\n\t"					\
 				  "bne   1b"  : : [_c] "r" (c) : "r0", "cc", "memory" );
+#endif
 
 
 void initGPIOs()
