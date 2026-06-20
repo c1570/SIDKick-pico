@@ -235,16 +235,6 @@ const float filterMeasurements6581[][ 7 ] = {
     { 1.45e6f, 1.75e8f, 1.0055f, 1e4f*0+1.06e4f, 235, 26480+0*27760, 6 },
 };
 
-float Filter::evalType3( float br, float o, float s, float mfr, int x )
-{
-    const float cap = 470e-12;
-    const float sc = 2.0f * 3.1415926535897932f * cap;
-    float kink = f0_6581_DAC[ x ] / 65536.0f; 
-    float dynamic = mfr + o / powf( s, kink );
-    float resistance = ( br * dynamic ) / ( br + dynamic );
-    return 1.0f / ( sc * resistance );
-}
-
 //#include "../filterLUTs.h"
 
 void Filter::set6581FilterCoeffs( const signed short *preset, int minFreq, int maxFreq, int distortion )

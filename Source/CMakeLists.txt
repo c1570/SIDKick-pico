@@ -23,6 +23,7 @@ add_compile_definitions(PICO_STDIO_UART=0)
 add_executable(SKpico
     SKpico.c
     exodecr.c
+    fmopl.c
     reSID16/envelope.cc
     reSID16/extfilt.cc
     reSID16/pot.cc
@@ -31,6 +32,7 @@ add_executable(SKpico
     reSID16/voice.cc
     reSID16/wave.cc
     reSIDWrapper.cc
+    prgslots.cc
 )
 
 target_compile_definitions(SKpico PUBLIC  PICO PICO_STACK_SIZE=0x100)
@@ -39,9 +41,20 @@ target_compile_definitions(SKpico PRIVATE PICO_USE_MALLOC_MUTEX=0)
 target_compile_definitions(SKpico PRIVATE PICO_DEBUG_MALLOC=0)
 target_compile_options(SKpico PRIVATE -save-temps -fverbose-asm)
 
-set_target_properties(SKpico PROPERTIES PICO_TARGET_LINKER_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/memmap_copy_to_ram_skpico.ld)
+# Select the SKpico board variant via -DSKPICO_VARIANT=SKPICO_2350CR | SKPICO_2350 (leave empty for RP2040)
+set(SKPICO_VARIANT "" CACHE STRING "SKpico board define: SKPICO_2350CR or SKPICO_2350")
+if(SKPICO_VARIANT)
+    target_compile_definitions(SKpico PRIVATE ${SKPICO_VARIANT})
+endif()
 
-target_link_libraries(SKpico pico_stdlib pico_multicore hardware_dma hardware_interp hardware_pwm pico_audio_i2s hardware_flash)
+if(PICO_PLATFORM STREQUAL "rp2350-arm-s" OR PICO_PLATFORM STREQUAL "rp2350-riscv" OR PICO_PLATFORM STREQUAL "rp2350")
+    set(SKpico_LINKER_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/memmap_copy_to_ram_2350.ld)
+else()
+    set(SKpico_LINKER_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/memmap_copy_to_ram_skpico.ld)
+endif()
+set_target_properties(SKpico PROPERTIES PICO_TARGET_LINKER_SCRIPT ${SKpico_LINKER_SCRIPT})
+
+target_link_libraries(SKpico pico_stdlib pico_multicore hardware_dma hardware_interp hardware_pwm pico_audio_i2s hardware_flash hardware_adc)
 
 pico_set_program_name(SKpico "SKpico")
 pico_set_program_version(SKpico "0.1")
