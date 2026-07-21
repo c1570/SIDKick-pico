@@ -4,72 +4,25 @@ const MAX_CYCLES = -1;
 const DEBUG = 0;
 const RP_MHZ = 300;
 
-import { RP2350, USBCDC, GPIOPinState } from './rp2040js/dist/esm/index.js';
-import { bootrom_rp2350_A2 } from './rp2040js/demo/bootrom_rp2350.js';
+import { RP2350, USBCDC, GPIOPinState } from './rp2350js/dist/esm/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { decodeBlock } from 'uf2';
 
 // Polyfill __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// UF2 loading helper
-const FLASH_START_ADDRESS = 0x10000000;
-function loadUF2(filename, rp2040) {
-  const file = fs.openSync(filename, 'r');
-  const buffer = new Uint8Array(512);
-  while (fs.readSync(file, buffer) === buffer.length) {
-    const block = decodeBlock(buffer);
-    const { flashAddress, payload } = block;
-    rp2040.flash.set(payload, flashAddress - FLASH_START_ADDRESS);
-  }
-  fs.closeSync(file);
-}
-
 const FIRMWARE_PATH = process.env.FIRMWARE
   ? path.resolve(process.env.FIRMWARE)
-  : `${__dirname}/../Source/build-2350-riscv/SKpico.uf2`;
-const INITIAL_PC = 0x10000036;
+  : `${__dirname}/../Source/build-2350/SKpico.uf2`;
 
 console.log('Initializing RP2350...');
-const mcu = new RP2350();
-mcu.loadBootrom(bootrom_rp2350_A2);
-
-// Load firmware
-if (fs.existsSync(FIRMWARE_PATH)) {
-  console.log(`Loading firmware from ${FIRMWARE_PATH}`);
-  loadUF2(FIRMWARE_PATH, mcu);
-  console.log('Firmware loaded successfully');
-} else {
-  console.error(`Firmware not found at ${FIRMWARE_PATH}`);
-  process.exit(1);
-}
+const mcu = new RP2350(false, undefined, { coreArch: 'arm' });
+mcu.loadFirmware(FIRMWARE_PATH);
+mcu.watchdog.onWatchdogTrigger = () => {};
 
 console.log("USB CDC output is disabled, use RP2 stdio via UART");
-/*
-// wiring up RP2 USB CDC
-const cdc = new USBCDC(mcu.usbCtrl);
-cdc.onDeviceConnected = () => {
-  console.log("USB CDC connected");
-};
-cdc.onSerialData = (value) => {
-  process.stdout.write(value);
-};
-if (process.stdin.isTTY) {
-  process.stdin.setRawMode(true);
-}
-process.stdin.on('data', (chunk) => {
-  // 24 is Ctrl+X
-  if (chunk[0] === 24) {
-    process.exit(0);
-  }
-  for (const byte of chunk) {
-    cdc.sendSerialByte(byte);
-  }
-});
-*/
 
 // Set up UART output
 mcu.uart[0].onByte = (value) => {
@@ -123,10 +76,6 @@ function getOffsetForVariable(var_name) {
   if(res == null) throw new Error(`Could not find offset of variable ${var_name} in map file ${filename}`);
   return parseInt(res[1]);
 }
-
-// Set initial program counter for both cores
-mcu.core0.pc = INITIAL_PC;
-mcu.core1.pc = INITIAL_PC;
 
 // D0..7 GPIO0..7
 // A0..4 GPIO16..20

@@ -3,24 +3,19 @@
 set -e
 
 # Configure here: which firmware variant the test runs against.
-: "${BUILD_DIR:=build-2350-riscv}"
+: "${BUILD_DIR:=build-2350}"
 FIRMWARE="../Source/${BUILD_DIR}/SKpico.uf2"
 export FIRMWARE
 
-if [[ ! -d rp2040js ]]; then
-  git clone --depth 1 https://github.com/c1570/rp2040js.git
+if [[ ! -d rp2350js ]]; then
+  git clone --depth 1 https://github.com/c1570/rp2350js.git
 fi
 
 # (Re)build the emulator library whenever the compiled output is missing.
-if [[ ! -f rp2040js/dist/esm/index.js ]]; then
-  cd rp2040js/
+if [[ ! -f rp2350js/dist/esm/index.js ]]; then
+  cd rp2350js/
   npm install
-  # Build the library (produces dist/esm + dist/cjs and fixes up the .js
-  # import extensions that test_runner.js relies on).
   npm run build
-  # Compile the bootrom modules that test_runner.js imports as plain .js files.
-  npx tsc demo/bootrom.ts --skipLibCheck
-  npx tsc demo/bootrom_rp2350.ts --skipLibCheck
   cd ..
 fi
 
