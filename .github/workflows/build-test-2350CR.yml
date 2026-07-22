@@ -1,0 +1,115 @@
+name: build-test-2350CR
+
+# Build the SKPICO_2350CR firmware variant
+# and run the rp2350js-based emulator test (tests/run_tests.sh).
+#
+# The firmware is an RP2350 (Cortex-M33) build, cross-compiled with the
+# arm-none-eabi GCC toolchain. The Pico SDK 2.x and pico-extras are fetched
+# from git by CMake's FetchContent (PICO_SDK_FETCH_FROM_GIT is enabled in
+# Source/CMakeLists.txt); the resulting _deps tree is cached across runs to
+# avoid re-cloning/re-building the SDK on every CI run.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: build-test-2350CR-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ARM embedded toolchain
+        # gcc-arm-none-eabi on Ubuntu 24.04 ships arm-none-eabi-gcc 13.2.x,
+        # which satisfies the Pico SDK 2.x minimum (>= 10.3). The newlib /
+        # libstdc++-newlib packages provide the C/C++ runtime the firmware
+        # needs (reSID is C++).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib \
+            cmake ninja-build
+
+      - name: Set up Python
+        # The Pico SDK build invokes several Python scripts (e.g. the platform
+        # generator), so a working python3 is required.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Set up Node.js
+        # tests/test_runner.js is an ES module and needs Node >= 18; pin to 22
+        # to match the version the harness is developed against.
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Cache Pico SDK / pico-extras (FetchContent _deps)
+        # FetchContent clones the SDK into build-2350CR/_deps. The import
+        # .cmake files pin GIT_TAG to master (not a fixed tag), so we key the
+        # cache on run_id (always writes a fresh entry) and restore via the
+        # stable prefix (always picks up the most recent cached tree). GitHub
+        # evicts stale caches automatically.
+        uses: actions/cache@v4
+        with:
+          path: Source/build-2350CR/_deps
+          key: pico-2350CR-deps-${{ github.run_id }}
+          restore-keys: |
+            pico-2350CR-deps-
+
+      - name: Configure (CMake)
+        # Matches the variant documented in Source/CMakeLists.txt:
+        #   -DPICO_PLATFORM=rp2350-arm-s -DSKPICO_VARIANT=SKPICO_2350CR
+        # PICO_BOARD defaults to pico2 for the rp2350 platform; set it
+        # explicitly for determinism, along with a Release build type.
+        run: |
+          cmake -S Source -B Source/build-2350CR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_PLATFORM=rp2350-arm-s \
+            -DPICO_BOARD=pico2 \
+            -DSKPICO_VARIANT=SKPICO_2350CR
+
+      - name: Build firmware
+        run: cmake --build Source/build-2350CR --parallel "$(nproc)"
+
+      - name: Verify build artifacts exist
+        # The test harness needs both the .uf2 (loaded by the emulator) and
+        # the .elf.map (parsed by getOffsetForVariable to locate RAM globals
+        # such as newSample / SID_CMD). Fail early with a clear message if
+        # either is missing.
+        run: |
+          test -f Source/build-2350CR/SKpico.uf2
+          test -f Source/build-2350CR/SKpico.elf.map
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKpico-2350CR
+          path: |
+            Source/build-2350CR/SKpico.uf2
+            Source/build-2350CR/SKpico.elf
+            Source/build-2350CR/SKpico.elf.map
+            Source/build-2350CR/SKpico.bin
+            Source/build-2350CR/SKpico.dis
+          if-no-files-found: error
+
+      - name: Run emulator tests
+        # tests/run_tests.sh installs the rp2350js dependency, checks the
+        # firmware is present, and invokes tests/test_runner.js. It reads
+        # BUILD_DIR (defaults to build-2350CR) to locate the firmware under
+        # ../Source/.
+        run: ./run_tests.sh
+        working-directory: tests
