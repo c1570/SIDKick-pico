@@ -49,7 +49,6 @@
 #include "pico/audio_i2s.h"
 #include "launch.h"
 #include "prgconfig.h"
-#include "emulator_tracing.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
 #include "hardware/adc.h"
@@ -527,8 +526,6 @@ void runEmulation()
 	int32_t paddleXSmooth = 128 << 8;
 	int32_t paddleYSmooth = 128 << 8;
 	int32_t paddleXRange, paddleYRange, newX, newY, oldX, oldY;
-
-	emulator_trace("READY. ")
 
 	while ( 1 )
 	{
@@ -1476,7 +1473,6 @@ handleSIDCommunication:
 							volatile uint8_t x = reg[ REG_MODEL_DETECT_VALUE ];
 						}
 						reg[ A ] = D;
-						emulator_trace("DATA_WRITE.")
 					}
 				}
 				disableDataLines = 1;

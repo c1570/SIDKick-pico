@@ -38,27 +38,7 @@ process.stdin.on('data', (chunk) => {
   }
 });
 
-// CSV replay is gated on the firmware's "READY. " trace. Once seen, we wait
-// 5000 more C64 cycles, then start feeding writes from the first CSV line
-// (i.e. the first line is treated as cycle 0; its original absolute cycle
-// offset is discarded).
-let readySeenAtCycle = null;   // c64CycleCount at which "READY. " was traced
-
-mcu.onTrace = function(coreNumber, pc, tag) {
-  // called by emulator on emulator_trace("TAGNAME"), note TAGNAME has to be N*4-1 characters long
-  console.log(`${mcu.cycles} PC 0x${pc.toString(16)} tag ${tag}`);
-  if (tag === 'READY. ' && readySeenAtCycle === null) {
-    readySeenAtCycle = c64CycleCount;
-    console.log(`>>> "READY. " seen at C64 cycle ${readySeenAtCycle}; starting CSV replay in 5000 cycles`);
-  } else if (tag === 'DATA_WRITE.') {
-    // SID_CMD encodes the just-written register/value: bit15=SID2, bits14:8=A, bits7:0=D.
-    const sidCmd = mcu.readUint16(SID_CMD_ADDR) >>> 0;
-    const reg = (sidCmd >> 8) & 0x1f;
-    const val = sidCmd & 0xff;
-    const sid2 = (sidCmd >> 15) & 1;
-    console.log(`    DATA_WRITE: SID${sid2 ? 2 : 1} reg 0x${reg.toString(16).padStart(2, '0')} = 0x${val.toString(16).padStart(2, '0')} (C64 cycle ${c64CycleCount})`);
-  }
-}
+const REPLAY_ARM_RP_CYCLE = 5000000;    // rp cycle at which firmware is "ready" and replay starts
 
 function getOffsetForVariable(var_name) {
   // allows reading variables from RP2 RAM:
@@ -118,7 +98,6 @@ let prevC64Cycle = -1;
 let replayStartCycle = null;   // absolute C64 cycle at which replay begins
 let lastWriteProcessedCycle = null;  // C64 cycle at which the final CSV write was pulled
 const FIRST_CSV_CYCLE = SID_WRITES.length ? SID_WRITES[0].cycle : 0;
-const REPLAY_ARM_DELAY = 5000; // C64 cycles after READY before replay starts
 const POST_CSV_TAIL_CYCLES = 500000; // keep emulating this long after the last CSV write
 const RESET_RELEASE_CYCLE = 1000;
 console.log(`Loaded ${SID_WRITES.length} SID writes from gyruss1.csv` +
@@ -132,9 +111,6 @@ const SAMPLE_RATE_HZ = 44100;
 const AUDIO_VALS = 2834;            // see Source/SKpico.c
 const AUDIO_BIAS = AUDIO_VALS >> 1; // centre of the PWM range
 const NEW_SAMPLE_ADDR = getOffsetForVariable('newSample');
-// SID_CMD is set to (A<<8)|D (bit 15 = SID2 flag) on every SID register
-// write, immediately before the DATA_WRITE trace fires.
-const SID_CMD_ADDR = getOffsetForVariable('SID_CMD');
 
 class WavWriter {
   constructor(filename, sampleRate) {
@@ -237,19 +213,13 @@ function runEmulation() {
     mcu.gpio[12].setInputValue(phiHigh);              // Phi2 (high=CPU halfcycle)
     mcu.gpio[22].setInputValue(c64CycleCount > RESET_RELEASE_CYCLE);
 
-    // On a new C64 cycle: (1) arm replay 5000 cycles after READY was seen,
-    // (2) once armed, pull due SID writes from the CSV queue. Writes are
-    // replayed from the first CSV line (its original cycle offset is the
-    // zero point), i.e. write N is due at:
-    //   replayStartCycle + (write.cycle - FIRST_CSV_CYCLE)
     if (c64CycleCount !== prevC64Cycle) {
       prevC64Cycle = c64CycleCount;
       pendingWrite = null;
-      // Arm the replay once we're REPLAY_ARM_DELAY cycles past READY.
-      if (replayStartCycle === null && readySeenAtCycle !== null &&
-          c64CycleCount >= readySeenAtCycle + REPLAY_ARM_DELAY) {
+      // Arm the replay once the firmware has booted and settled.
+      if (replayStartCycle === null && mcu.cycles >= REPLAY_ARM_RP_CYCLE) {
         replayStartCycle = c64CycleCount;
-        console.log(`>>> CSV replay armed at C64 cycle ${replayStartCycle}`);
+        console.log(`>>> CSV replay armed at C64 cycle ${replayStartCycle} (rp cycle ${mcu.cycles})`);
       }
       if (replayStartCycle !== null) {
         const localCycle = c64CycleCount - replayStartCycle;
@@ -318,9 +288,7 @@ function runEmulation() {
         ? `tail (${Math.max(0, lastWriteProcessedCycle + POST_CSV_TAIL_CYCLES - c64CycleCount)} C64 cycles left)`
         : replayStartCycle !== null
           ? `replaying (cycle ${c64CycleCount - replayStartCycle} of CSV)`
-          : readySeenAtCycle !== null
-            ? `armed, ${Math.max(0, readySeenAtCycle + REPLAY_ARM_DELAY - c64CycleCount)} cycles to replay`
-            : 'waiting for READY';
+          : `arming (rp ${mcu.cycles}/${REPLAY_ARM_RP_CYCLE})`;
       console.log(`\nTime: ${time.toFixed(1)}s, rpCycleCount: ${mcu.cycles}, 6510 Cycles: ${c64CycleCount}` +
         `, WAV: ${wavSec.toFixed(2)}s (${samplesWritten} samples), ${phase}, SID writes left: ${csvLeft}\n`);
       nextTimeUpdate += 40000000;

@@ -3,7 +3,7 @@
 set -e
 
 # Configure here: which firmware variant the test runs against.
-: "${BUILD_DIR:=build-2350}"
+: "${BUILD_DIR:=build-2350CR}"
 FIRMWARE="../Source/${BUILD_DIR}/SKpico.uf2"
 export FIRMWARE
 
