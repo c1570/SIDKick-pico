@@ -23,6 +23,8 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -94,18 +96,6 @@ jobs:
           test -f Source/build-2350CR/SKpico.uf2
           test -f Source/build-2350CR/SKpico.elf.map
 
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: SKpico-2350CR
-          path: |
-            Source/build-2350CR/SKpico.uf2
-            Source/build-2350CR/SKpico.elf
-            Source/build-2350CR/SKpico.elf.map
-            Source/build-2350CR/SKpico.bin
-            Source/build-2350CR/SKpico.dis
-          if-no-files-found: error
-
       - name: Run emulator tests
         # tests/run_tests.sh installs the rp2350js dependency, checks the
         # firmware is present, and invokes tests/test_runner.js. It reads
@@ -113,3 +103,50 @@ jobs:
         # ../Source/.
         run: ./run_tests.sh
         working-directory: tests
+
+      - name: Publish rolling release
+        # Publish the freshly built firmware as a rolling GitHub Release so
+        # it's publicly downloadable without login. Each branch gets its own
+        # rolling release tagged `latest-<branch>`; every push to that branch
+        # replaces the previous build's assets. The permalink is stable:
+        #   https://github.com/<owner>/<repo>/releases/download/latest-<branch>/SKpico.uf2
+        # `main` is published as a regular release (so it stays the repo's
+        # "latest"); other branches are marked --prerelease so they don't
+        # displace main in the Releases sidebar. Runs only on push/dispatch,
+        # not on pull_request events (those have no branch to publish).
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -e
+          TAG="latest-${BRANCH}"
+          # Glob build-* so this picks up whichever build dir the Configure
+          # step created (build-2350CR today, but won't need editing if the
+          # variant/build dir name changes). Bash expands the globs at
+          # assignment; if no match, the literal pattern is kept and gh will
+          # error out (fail-fast).
+          ASSETS=(
+            Source/build-*/SKpico.uf2
+            Source/build-*/SKpico.elf
+            Source/build-*/SKpico.elf.map
+            Source/build-*/SKpico.bin
+            Source/build-*/SKpico.dis
+          )
+          PRERELEASE_FLAG=""
+          if [ "$BRANCH" != "main" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          # Delete any previous rolling release for this branch, then create a
+          # fresh one pointing at the just-pushed commit. --cleanup-tag removes
+          # the git tag too; both are recreated by `release create`.
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "Latest build: ${BRANCH}" \
+            --notes "Auto-built firmware from commit ${COMMIT} on branch \`${BRANCH}\`.
+
+          This is a rolling release; it is replaced on every push to \`${BRANCH}\`. Download artifacts below (no GitHub login required)." \
+            --target "$COMMIT" \
+            $PRERELEASE_FLAG \
+            "${ASSETS[@]}"
