@@ -213,7 +213,7 @@ extern uint32_t C64_CLOCK;
 #else
 #define DELAY_Nx3p2_CYCLES( c )								\
     asm volatile( "mov  r0, %[_c]\n\t"							\
-				  "1: sub  r0, r0, #1\n\t"					\
+				  "1: subs r0, r0, #1\n\t"					\
 				  "bne   1b"  : : [_c] "r" (c) : "r0", "cc", "memory" );
 #endif
 
