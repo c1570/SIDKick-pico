@@ -4,7 +4,7 @@ const MAX_CYCLES = -1;
 const DEBUG = 0;
 const RP_MHZ = 300;
 
-import { RP2350, USBCDC, GPIOPinState } from './rp2350js/dist/esm/index.js';
+import { RP2350, USBCDC, GPIOPinState } from 'rp2350js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,11 +18,7 @@ const FIRMWARE_PATH = process.env.FIRMWARE
   : `${__dirname}/../Source/build-2350/SKpico.uf2`;
 
 console.log('Initializing RP2350...');
-const mcu = new RP2350(false, undefined, { coreArch: 'arm' });
-mcu.loadFirmware(FIRMWARE_PATH);
-mcu.watchdog.onWatchdogTrigger = () => {};
-
-console.log("USB CDC output is disabled, use RP2 stdio via UART");
+const mcu = new RP2350({ coreArch: 'arm', loadFirmware: FIRMWARE_PATH });
 
 // Set up UART output
 mcu.uart[0].onByte = (value) => {
@@ -124,6 +120,7 @@ let lastWriteProcessedCycle = null;  // C64 cycle at which the final CSV write w
 const FIRST_CSV_CYCLE = SID_WRITES.length ? SID_WRITES[0].cycle : 0;
 const REPLAY_ARM_DELAY = 5000; // C64 cycles after READY before replay starts
 const POST_CSV_TAIL_CYCLES = 500000; // keep emulating this long after the last CSV write
+const RESET_RELEASE_CYCLE = 1000;
 console.log(`Loaded ${SID_WRITES.length} SID writes from gyruss1.csv` +
   (SID_WRITES.length ? ` (first @cycle ${FIRST_CSV_CYCLE}, last @cycle ${SID_WRITES[SID_WRITES.length - 1].cycle})` : ''));
 
@@ -238,7 +235,7 @@ function runEmulation() {
 
     const phiHigh = c64CycleNs < 500;
     mcu.gpio[12].setInputValue(phiHigh);              // Phi2 (high=CPU halfcycle)
-    mcu.gpio[22].setInputValue(c64CycleCount > 40000); // Reset (low=active)
+    mcu.gpio[22].setInputValue(c64CycleCount > RESET_RELEASE_CYCLE);
 
     // On a new C64 cycle: (1) arm replay 5000 cycles after READY was seen,
     // (2) once armed, pull due SID writes from the CSV queue. Writes are
